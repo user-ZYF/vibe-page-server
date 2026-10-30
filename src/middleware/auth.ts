@@ -20,9 +20,13 @@ export async function authRequired(req: Request, res: Response, next: NextFuncti
   try {
     const payload = parseToken(header.slice(BEARER_PREFIX.length));
     const user = await User.findByPk(payload.userId, { attributes: ['id', 'sessionId'] });
-    if (!user || typeof payload.sessionId !== 'string' || user.sessionId !== payload.sessionId) {
-      const message = user ? '账号已在其他地方登录，请重新登录' : '账号不存在，请重新登录';
-      res.json(Result.error(ResultCodeEnum.FORCE_OFFLINE, message));
+    if (!user) {
+      res.json(Result.error(ResultCodeEnum.USER_NOT_FOUND, '账号不存在，请重新登录'));
+      return;
+    }
+    // 比对令牌 sessionId 与 user.session_id，不一致说明会话已被新登录顶替
+    if (typeof payload.sessionId !== 'string' || user.sessionId !== payload.sessionId) {
+      res.json(Result.error(ResultCodeEnum.FORCE_OFFLINE, '账号已在其他地方登录，请重新登录'));
       return;
     }
     req.userId = user.id;
