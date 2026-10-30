@@ -8,6 +8,8 @@ export enum ResultCodeEnum {
   BAD_REQUEST = 400,
   /** 未登录或令牌已过期 */
   UNAUTHORIZED = 401,
+  /** 账号已在其他地方登录 */
+  FORCE_OFFLINE = 403,
   /** 资源不存在或无权访问 */
   NOT_FOUND = 404,
   /** 系统异常 */

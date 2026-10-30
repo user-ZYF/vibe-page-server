@@ -38,16 +38,26 @@ export async function register({ username, password, nickname }: RegisterBody): 
  * 登录
  */
 export async function login({ username, password }: LoginBody): Promise<LoginResult> {
-  const user = await User.findOne({ where: { username } });
-  if (!user || !bcrypt.compareSync(password, user.password)) {
-    throw new BizException(ResultCodeEnum.BAD_REQUEST, '用户名或密码错误');
-  }
+  return sequelize.transaction(async (t) => {
+    const user = await User.findOne({ where: { username }, transaction: t });
+    if (!user || !bcrypt.compareSync(password, user.password)) {
+      throw new BizException(ResultCodeEnum.BAD_REQUEST, '用户名或密码错误');
+    }
 
-  return {
-    accessToken: generateToken(user.id, user.username),
-    refreshToken: await issueRefreshToken(user.id),
-    userInfo: user.toJSON(),
-  };
+    // 作废旧会话的全部刷新令牌，并生成新会话 ID 覆盖到用户表
+    await RefreshToken.update(
+      { revoked: 1 },
+      { where: { userId: user.id, revoked: 0 }, transaction: t },
+    );
+    user.sessionId = randomUUID();
+    await user.save({ transaction: t });
+
+    return {
+      accessToken: generateToken(user.id, user.username, user.sessionId),
+      refreshToken: await issueRefreshToken(user.id, t),
+      userInfo: user.toJSON(),
+    };
+  });
 }
 
 /** 为新用户播种一张示例画布，资源缺失时跳过不影响注册 */
@@ -111,7 +121,7 @@ export async function refresh(token: string): Promise<LoginResult> {
 
     const newRefreshToken = await issueRefreshToken(user.id, t);
     return {
-      accessToken: generateToken(user.id, user.username),
+      accessToken: generateToken(user.id, user.username, user.sessionId),
       refreshToken: newRefreshToken,
       userInfo: user.toJSON(),
     };

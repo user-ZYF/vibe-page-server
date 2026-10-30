@@ -23,6 +23,8 @@ export class User extends Model<InferAttributes<User>, InferCreationAttributes<U
   declare nickname: CreationOptional<string>;
   /** 头像地址 */
   declare avatar: CreationOptional<string>;
+  /** 当前会话 ID（单点登录：新登录覆盖，旧会话令牌随之失效） */
+  declare sessionId: CreationOptional<string>;
   /** 逻辑删除标记 */
   declare deleted: CreationOptional<number>;
   /** 创建时间（毫秒时间戳） */
@@ -32,7 +34,7 @@ export class User extends Model<InferAttributes<User>, InferCreationAttributes<U
 
   /** 序列化为响应对象（剥离密码等敏感字段） */
   override toJSON(): UserInfo {
-    const { password: _p, deleted: _d, ...data } = this.get({ plain: true });
+    const { password: _p, deleted: _d, sessionId: _s, ...data } = this.get({ plain: true });
     return data;
   }
 }
@@ -44,6 +46,7 @@ User.init(
     password: { type: DataTypes.STRING(100), allowNull: false },
     nickname: { type: DataTypes.STRING(50), allowNull: false, defaultValue: '' },
     avatar: { type: DataTypes.STRING(255), allowNull: false, defaultValue: '' },
+    sessionId: { type: DataTypes.STRING(64), allowNull: false, defaultValue: '' },
     deleted: { type: DataTypes.TINYINT, allowNull: false, defaultValue: 0 },
     createdAt: DataTypes.BIGINT,
     updatedAt: DataTypes.BIGINT,
@@ -64,8 +67,8 @@ User.init(
   },
 );
 
-/** 用户信息（不含密码、删除标记） */
-export type UserInfo = Omit<InferAttributes<User>, 'password' | 'deleted'>;
+/** 用户信息（不含密码、会话 ID、删除标记） */
+export type UserInfo = Omit<InferAttributes<User>, 'password' | 'deleted' | 'sessionId'>;
 
 /** 登录/刷新响应 */
 export interface LoginResult {

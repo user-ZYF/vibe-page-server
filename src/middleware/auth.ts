@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { Result } from '../common/result.js';
 import { ResultCodeEnum } from '../constants/result-code.js';
+import { User } from '../models/index.js';
 import { parseToken } from '../utils/jwt.js';
 
 /** Authorization 头前缀 */
@@ -9,7 +10,7 @@ const BEARER_PREFIX = 'Bearer ';
 /**
  * JWT 鉴权中间件：校验 Authorization 头，解析用户 ID 写入 req.userId
  */
-export function authRequired(req: Request, res: Response, next: NextFunction): void {
+export async function authRequired(req: Request, res: Response, next: NextFunction): Promise<void> {
   const header = req.get('Authorization');
   if (!header?.startsWith(BEARER_PREFIX)) {
     // 未携带 token 或格式不对（没有 Bearer 前缀）
@@ -18,7 +19,13 @@ export function authRequired(req: Request, res: Response, next: NextFunction): v
   }
   try {
     const payload = parseToken(header.slice(BEARER_PREFIX.length));
-    req.userId = Number(payload.sub);
+    const user = await User.findByPk(payload.userId, { attributes: ['id', 'sessionId'] });
+    if (!user || typeof payload.sessionId !== 'string' || user.sessionId !== payload.sessionId) {
+      const message = user ? '账号已在其他地方登录，请重新登录' : '账号不存在，请重新登录';
+      res.json(Result.error(ResultCodeEnum.FORCE_OFFLINE, message));
+      return;
+    }
+    req.userId = user.id;
     next();
   } catch {
     // token 非法或过期
