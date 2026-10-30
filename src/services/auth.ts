@@ -74,10 +74,15 @@ async function seedSamplePage(userId: number): Promise<void> {
  * 为指定用户签发刷新令牌
  * @param userId 用户 ID
  * @param transaction 可选事务
+ * @param expiresAt 过期时间（毫秒时间戳）
  * @returns 刷新令牌
  */
-export async function issueRefreshToken(userId: number, transaction?: Transaction): Promise<string> {
-  const expiresAt = Date.now() + Number(process.env.JWT_REFRESH_EXPIRE_DAYS) * 24 * 60 * 60 * 1000;
+export async function issueRefreshToken(
+  userId: number,
+  transaction?: Transaction,
+  expiresAt?: number,
+): Promise<string> {
+  expiresAt ??= Date.now() + Number(process.env.JWT_REFRESH_EXPIRE_DAYS) * 24 * 60 * 60 * 1000;
   const record = await RefreshToken.create(
     {
       userId,
@@ -113,13 +118,14 @@ export async function refresh(token: string): Promise<LoginResult> {
       throw new BizException(ResultCodeEnum.UNAUTHORIZED, '刷新令牌无效或已过期，请重新登录');
     }
 
-    const { userId } = (await RefreshToken.findOne({ where: { token }, transaction: t }))!;
-    const user = await User.findByPk(userId, { transaction: t });
+    const oldToken = (await RefreshToken.findOne({ where: { token }, transaction: t }))!;
+    const user = await User.findByPk(oldToken.userId, { transaction: t });
     if (!user) {
       throw new BizException(ResultCodeEnum.UNAUTHORIZED, '用户不存在，请重新登录');
     }
 
-    const newRefreshToken = await issueRefreshToken(user.id, t);
+    // 新令牌继承旧令牌的过期时间
+    const newRefreshToken = await issueRefreshToken(user.id, t, oldToken.expiresAt);
     return {
       accessToken: generateToken(user.id, user.username, user.sessionId),
       refreshToken: newRefreshToken,
