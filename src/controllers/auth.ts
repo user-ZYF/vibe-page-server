@@ -1,13 +1,7 @@
 import type { Request, Response } from 'express';
 import { Result } from '../common/result.js';
-import {
-  login,
-  logout,
-  refresh,
-  register,
-  type LoginBody,
-  type RegisterBody,
-} from '../services/auth.js';
+import { login, logout, refresh, register } from '../services/auth.js';
+import type { LoginBody, RegisterBody } from '../types/auth.js';
 import {
   assertIsString,
   assertLengthRange,

@@ -28,12 +28,15 @@ src/
 │   └── index.ts              #   统一导出
 ├── services/                 # 业务逻辑
 │   ├── auth.ts               #   注册 / 登录 / 播种 / 令牌签发·轮换·作废
+│   ├── file.ts               #   分片续传：查缺片 / 存分片 / 合并
 │   └── page.ts               #   画布增删改查（含归属校验）
 ├── controllers/              # 请求入口 + 参数校验
 │   ├── auth.ts
+│   ├── file.ts
 │   └── page.ts
 ├── routes/                   # 路由表
 │   ├── auth.ts               #   /api/auth/**
+│   ├── file.ts               #   /api/files/**（挂载 authRequired）
 │   └── page.ts               #   /api/pages/**（挂载 authRequired）
 ├── types/
 │   └── express.d.ts          # Express Request 扩展（req.userId）
@@ -86,6 +89,9 @@ pnpm start        # node dist/index.js
 | GET | /api/pages/detail?id= | 画布详情 → PageInfo | 是 |
 | PUT | /api/pages | 保存画布 { id, title?, content?, thumbnail? } → PageInfo | 是 |
 | DELETE | /api/pages?id= | 删除画布（逻辑删除） | 是 |
+| POST | /api/files/check | 上传检查 { fileHash, fileName, size, chunks:[{index,hash}] } → {url} 秒传或 {needed} 缺片列表 | 是 |
+| POST | /api/files/chunk | 上传分片（multipart/form-data：fileHash/fileName/chunkIndex/chunkHash/totalChunks + 分片字段 chunk），最后一片返回 {url} | 是 |
+| GET | /uploads/** | 合并后文件静态访问 | 否 |
 
 ## 实现说明
 

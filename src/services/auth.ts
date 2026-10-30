@@ -7,6 +7,7 @@ import { BizException } from '../common/biz-exception.js';
 import { ResultCodeEnum } from '../constants/result-code.js';
 import { sequelize } from '../db.js';
 import { Page, RefreshToken, User, type LoginResult, type UserInfo } from '../models/index.js';
+import type { LoginBody, RegisterBody } from '../types/auth.js';
 import { generateToken } from '../utils/jwt.js';
 
 /** 新用户默认画布标题 */
@@ -14,24 +15,6 @@ const SAMPLE_PAGE_TITLE = '示例画布';
 
 /** 示例画布种子文件路径 */
 const SEED_PATH = path.resolve(import.meta.dirname, '../../seed/sample-page.json');
-
-/** 注册请求 */
-export interface RegisterBody {
-  /** 用户名 */
-  username: string;
-  /** 密码 */
-  password: string;
-  /** 昵称 */
-  nickname?: string;
-}
-
-/** 登录请求 */
-export interface LoginBody {
-  /** 用户名 */
-  username: string;
-  /** 密码 */
-  password: string;
-}
 
 /**
  * 注册
