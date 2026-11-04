@@ -21,8 +21,6 @@ export class User extends Model<InferAttributes<User>, InferCreationAttributes<U
   declare password: string;
   /** 昵称 */
   declare nickname: CreationOptional<string>;
-  /** 头像地址 */
-  declare avatar: CreationOptional<string>;
   /** 当前会话 ID（单点登录：新登录覆盖，旧会话令牌随之失效） */
   declare sessionId: CreationOptional<string>;
   /** 逻辑删除标记 */
@@ -45,7 +43,6 @@ User.init(
     username: { type: DataTypes.STRING(50), allowNull: false },
     password: { type: DataTypes.STRING(100), allowNull: false },
     nickname: { type: DataTypes.STRING(50), allowNull: false, defaultValue: '' },
-    avatar: { type: DataTypes.STRING(255), allowNull: false, defaultValue: '' },
     sessionId: { type: DataTypes.STRING(64), allowNull: false, defaultValue: '' },
     deleted: { type: DataTypes.TINYINT, allowNull: false, defaultValue: 0 },
     createdAt: DataTypes.BIGINT,

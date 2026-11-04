@@ -1,0 +1,12 @@
+/** 房间在线人数上限 */
+export const MAX_ROOM_MEMBERS = 4;
+
+/** 协作 WebSocket 关闭码（自定义 4000+，客户端据此停止自动重连） */
+export enum CollabCloseCodeEnum {
+  /** 未定义 */
+  UNDEFINED = 0,
+  /** 房间已满 */
+  ROOM_FULL = 4001,
+  /** 同账号已加入 */
+  DUPLICATE_USER = 4002,
+}

@@ -1,6 +1,8 @@
 import 'dotenv/config';
+import { createServer } from 'node:http';
 import { createApp } from './app.js';
 import { sequelize } from './db.js';
+import { attachCollabServer } from './ws/index.js';
 // 引入 models 确保表结构已注册到 sequelize
 import './models/index.js';
 
@@ -16,7 +18,10 @@ async function main(): Promise<void> {
 
     const port = Number(process.env.PORT);
     const app = createApp();
-    app.listen(port, () => {
+    // HTTP 与协作 WebSocket 共用同一端口（/ws 路径升级为长连接）
+    const server = createServer(app);
+    attachCollabServer(server);
+    server.listen(port, () => {
       console.log(`vibepage-server 已启动：http://localhost:${port}`);
     });
   } catch (err) {

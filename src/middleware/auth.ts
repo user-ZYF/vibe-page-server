@@ -1,11 +1,17 @@
 import type { NextFunction, Request, Response } from 'express';
 import { Result } from '../common/result.js';
 import { ResultCodeEnum } from '../constants/result-code.js';
-import { User } from '../models/index.js';
-import { parseToken } from '../utils/jwt.js';
+import { resolveTokenUser } from '../services/auth.js';
 
 /** Authorization 头前缀 */
 const BEARER_PREFIX = 'Bearer ';
+
+/** 令牌校验失败原因对应的提示文案 */
+const AUTH_ERROR_MESSAGES: Partial<Record<ResultCodeEnum, string>> = {
+  [ResultCodeEnum.UNAUTHORIZED]: '未登录或令牌已过期',
+  [ResultCodeEnum.USER_NOT_FOUND]: '账号不存在，请重新登录',
+  [ResultCodeEnum.FORCE_OFFLINE]: '账号已在其他地方登录，请重新登录',
+};
 
 /**
  * JWT 鉴权中间件：校验 Authorization 头，解析用户 ID 写入 req.userId
@@ -18,21 +24,14 @@ export async function authRequired(req: Request, res: Response, next: NextFuncti
     return;
   }
   try {
-    const payload = parseToken(header.slice(BEARER_PREFIX.length));
-    const user = await User.findByPk(payload.userId, { attributes: ['id', 'sessionId'] });
-    if (!user) {
-      res.json(Result.error(ResultCodeEnum.USER_NOT_FOUND, '账号不存在，请重新登录'));
+    const auth = await resolveTokenUser(header.slice(BEARER_PREFIX.length));
+    if (auth.code !== ResultCodeEnum.SUCCESS || !auth.user) {
+      res.json(Result.error(auth.code, AUTH_ERROR_MESSAGES[auth.code] ?? '未授权'));
       return;
     }
-    // 比对令牌 sessionId 与 user.session_id，不一致说明会话已被新登录顶替
-    if (typeof payload.sessionId !== 'string' || user.sessionId !== payload.sessionId) {
-      res.json(Result.error(ResultCodeEnum.FORCE_OFFLINE, '账号已在其他地方登录，请重新登录'));
-      return;
-    }
-    req.userId = user.id;
+    req.userId = auth.user.id;
     next();
   } catch {
-    // token 非法或过期
     res.json(Result.error(ResultCodeEnum.UNAUTHORIZED, '未登录或令牌已过期'));
   }
 }

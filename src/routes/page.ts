@@ -2,8 +2,10 @@ import { Router } from 'express';
 import {
   createController,
   deleteController,
-  detailController,
+  disableShareController,
+  enableShareController,
   listController,
+  getShareStatusController,
   updateController,
 } from '../controllers/page.js';
 import { authRequired } from '../middleware/auth.js';
@@ -16,6 +18,8 @@ pageRouter.use(authRequired);
 
 pageRouter.get('/', listController);
 pageRouter.post('/', createController);
-pageRouter.get('/detail', detailController);
 pageRouter.put('/', updateController);
 pageRouter.delete('/', deleteController);
+pageRouter.post('/share', enableShareController);
+pageRouter.delete('/share', disableShareController);
+pageRouter.get('/share', getShareStatusController);

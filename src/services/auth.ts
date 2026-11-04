@@ -8,7 +8,7 @@ import { ResultCodeEnum } from '../constants/result-code.js';
 import { sequelize } from '../db.js';
 import { Page, RefreshToken, User, type LoginResult, type UserInfo } from '../models/index.js';
 import type { LoginBody, RegisterBody } from '../types/auth.js';
-import { generateToken } from '../utils/jwt.js';
+import { generateToken, parseToken } from '../utils/jwt.js';
 
 /** 新用户默认画布标题 */
 const SAMPLE_PAGE_TITLE = '示例画布';
@@ -64,7 +64,7 @@ export async function login({ username, password }: LoginBody): Promise<LoginRes
 async function seedSamplePage(userId: number): Promise<void> {
   try {
     const content = fs.readFileSync(SEED_PATH, 'utf8');
-    await Page.create({ userId, title: SAMPLE_PAGE_TITLE, content, thumbnail: '' });
+    await Page.create({ userId, title: SAMPLE_PAGE_TITLE, content });
   } catch (e) {
     console.warn('示例画布资源缺失，跳过播种', e);
   }
@@ -140,4 +140,38 @@ export async function refresh(token: string): Promise<LoginResult> {
  */
 export async function logout(token: string): Promise<void> {
   await RefreshToken.update({ revoked: 1 }, { where: { token } });
+}
+
+/** 访问令牌校验结果 */
+export interface TokenAuthResult {
+  /** 校验结果码，SUCCESS 表示通过 */
+  code: ResultCodeEnum;
+  /** 校验通过的用户，仅 code 为 SUCCESS 时有值 */
+  user: User | null;
+}
+
+/**
+ * 校验访问令牌并解析出有效用户：JWT 验签 + 用户存在性 + 会话一致性（单点登录）
+ * authRequired 中间件与协作 WebSocket 握手共用
+ * @param token 访问令牌（不含 Bearer 前缀）
+ * @returns 校验结果
+ */
+export async function resolveTokenUser(token: string): Promise<TokenAuthResult> {
+  let payload;
+  try {
+    payload = parseToken(token);
+  } catch {
+    return { code: ResultCodeEnum.UNAUTHORIZED, user: null };
+  }
+  const user = await User.findByPk(payload.userId, {
+    attributes: ['id', 'username', 'nickname', 'sessionId'],
+  });
+  if (!user) {
+    return { code: ResultCodeEnum.USER_NOT_FOUND, user: null };
+  }
+  // 比对令牌 sessionId 与 user.session_id，不一致说明会话已被新登录顶替
+  if (typeof payload.sessionId !== 'string' || user.sessionId !== payload.sessionId) {
+    return { code: ResultCodeEnum.FORCE_OFFLINE, user: null };
+  }
+  return { code: ResultCodeEnum.SUCCESS, user };
 }

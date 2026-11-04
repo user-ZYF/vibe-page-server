@@ -87,7 +87,7 @@ pnpm start        # node dist/index.js
 | GET | /api/pages | 当前用户画布列表 → PageListItem[] | 是 |
 | POST | /api/pages | 新建画布 { title, content? } → PageInfo | 是 |
 | GET | /api/pages/detail?id= | 画布详情 → PageInfo | 是 |
-| PUT | /api/pages | 保存画布 { id, title?, content?, thumbnail? } → PageInfo | 是 |
+| PUT | /api/pages | 保存画布 { id, title?, content? } → PageInfo | 是 |
 | DELETE | /api/pages?id= | 删除画布（逻辑删除） | 是 |
 | POST | /api/files/check | 上传检查 { fileHash, fileName, size, chunks:[{index,hash}] } → {url} 秒传或 {needed} 缺片列表 | 是 |
 | POST | /api/files/chunk | 上传分片（multipart/form-data：fileHash/fileName/chunkIndex/chunkHash/totalChunks + 分片字段 chunk），最后一片返回 {url} | 是 |

@@ -1,6 +1,14 @@
 import type { Request, Response } from 'express';
 import { Result } from '../common/result.js';
-import { createPage, deletePage, listPages, pageDetail, updatePage } from '../services/page.js';
+import {
+  createPage,
+  deletePage,
+  disableShare,
+  enableShare,
+  getShareStatus,
+  listPages,
+  renamePage,
+} from '../services/page.js';
 import { assertId, assertIsString, assertMaxLength, requireNonEmpty } from '../utils/validate.js';
 
 /**
@@ -23,22 +31,14 @@ export async function createController(req: Request, res: Response): Promise<voi
 }
 
 /**
- * 画布详情
- */
-export async function detailController(req: Request, res: Response): Promise<void> {
-  const id = assertId(req.query.id);
-  const data = await pageDetail(req.userId!, id);
-  res.json(Result.success(data));
-}
-
-/**
- * 保存画布
+ * 重命名画布（内容由协作房间实时落库，不走此接口）
  */
 export async function updateController(req: Request, res: Response): Promise<void> {
   const id = assertId(req.body?.id);
+  requireNonEmpty(req.body, 'title');
   assertIsString(req.body, 'title');
   assertMaxLength(req.body, 'title', 100);
-  const data = await updatePage(req.userId!, { ...req.body, id });
+  const data = await renamePage(req.userId!, { id, title: req.body.title });
   res.json(Result.success(data));
 }
 
@@ -49,4 +49,31 @@ export async function deleteController(req: Request, res: Response): Promise<voi
   const id = assertId(req.query.id);
   await deletePage(req.userId!, id);
   res.json(Result.success());
+}
+
+/**
+ * 开启协作分享，返回分享令牌
+ */
+export async function enableShareController(req: Request, res: Response): Promise<void> {
+  const id = assertId(req.body?.id);
+  const data = await enableShare(req.userId!, id);
+  res.json(Result.success(data));
+}
+
+/**
+ * 关闭协作分享
+ */
+export async function disableShareController(req: Request, res: Response): Promise<void> {
+  const id = assertId(req.body?.id ?? req.query.id);
+  await disableShare(req.userId!, id);
+  res.json(Result.success());
+}
+
+/**
+ * 画布分享状态
+ */
+export async function getShareStatusController(req: Request, res: Response): Promise<void> {
+  const id = assertId(req.query.id);
+  const data = await getShareStatus(req.userId!, id);
+  res.json(Result.success(data));
 }
