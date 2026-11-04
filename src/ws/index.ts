@@ -89,7 +89,7 @@ export function attachCollabServer(server: Server): void {
         aliveClients.delete(ws);
         const { room } = ctx;
         leaveRoom(room, ws);
-        // 房间无人：销毁（修改时已即时落库，无需再持久化）
+        // 房间无人：销毁
         if (room.members.size === 0) {
           removeRoom(room);
         }
@@ -150,8 +150,7 @@ async function handleUpgrade(
       head,
       // 握手成功后的回调
       (ws) => {
-        // 房间惰性创建：首个连接进入时从数据库载入画布内容
-        const canvasData = JSON.parse(page.content || "{}") as CanvasStorageData;
+        const canvasData = JSON.parse(page.content) as CanvasStorageData;
         const room = getOrCreateRoom(pageId, canvasData, {
           title: page.title,
           userId: page.userId,

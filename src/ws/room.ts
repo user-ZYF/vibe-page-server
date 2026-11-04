@@ -12,7 +12,7 @@ import type {
 import type { CanvasStorageData, CanvasInnerElement } from '../types/canvas.js';
 import { CollabMsgTypeEnum as MsgType } from '../types/collab.js';
 import { CollabCloseCodeEnum, MAX_ROOM_MEMBERS } from '../constants/collab.js';
-import { persistPageContent } from '../services/page.js';
+import { schedulePersistPageContent, flushPersistPageContent } from '../services/page.js';
 
 /** 全局房间表 pageId -> CollabRoom */
 const rooms = new Map<number, CollabRoom>();
@@ -41,6 +41,8 @@ export function getOrCreateRoom(
 /** 从房间表移除 */
 export function removeRoom(room: CollabRoom): void {
   rooms.delete(room.pageId);
+  // 销毁前冲刷可能仍在暂存中的画布数据
+  flushPersistPageContent(room.pageId, room.canvasData);
 }
 
 // ==================== 成员进出 ====================
@@ -84,6 +86,8 @@ export function leaveRoom(room: CollabRoom, socket: WebSocket): void {
   room.members.delete(socket);
   releaseUserSelections(room, member.userId);
   broadcastMembers(room);
+  // 成员退出：冲刷可能仍在暂存中的画布数据
+  flushPersistPageContent(room.pageId, room.canvasData);
 }
 
 // ==================== 画布修改 ====================
@@ -117,7 +121,8 @@ export function handleOp(room: CollabRoom, socket: WebSocket, msg: CollabOpMsg):
 
   // 本次修改删除掉的元素若带选中标记（含自己的），自动释放
   pruneStaleSelections(room);
-  void persistPageContent(room.pageId, room.canvasData);
+  // 标记脏数据并延迟合并落库（串行队列保证写库顺序）
+  schedulePersistPageContent(room.pageId, room.canvasData);
 }
 
 // ==================== 选中标记 ====================

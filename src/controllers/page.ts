@@ -26,6 +26,8 @@ export async function createController(req: Request, res: Response): Promise<voi
   requireNonEmpty(req.body, 'title');
   assertIsString(req.body, 'title');
   assertMaxLength(req.body, 'title', 100);
+  requireNonEmpty(req.body, 'content');
+  assertIsString(req.body, 'content');
   const data = await createPage(req.userId!, req.body);
   res.json(Result.success(data));
 }

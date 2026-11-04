@@ -1,9 +1,10 @@
-import { randomUUID } from 'node:crypto';
+﻿import { randomUUID } from 'node:crypto';
 import { BizException } from '../common/biz-exception.js';
 import { ResultCodeEnum } from '../constants/result-code.js';
 import { Page, type PageInfo, type PageListItem } from '../models/index.js';
-import type { PageCreateBody, PageRenameBody, ShareStatusResult } from '../types/page.js';
+import type { PageCreateBody, PageRenameBody, ShareStatusResult, PagePersistState } from '../types/page.js';
 import type { CanvasStorageData } from '../types/canvas.js';
+import { PERSIST_DELAY_MS } from '../constants/collab.js';
 
 /**
  * 当前用户的画布列表
@@ -91,17 +92,56 @@ export async function getShareStatus(userId: number, id: number): Promise<ShareS
   return { shareToken: page.shareToken };
 }
 
-/**
- * 协作房间落库：把房间最新画布数据写回页面 content
- * @param pageId 页面 ID
- * @param canvasData 画布数据（JSON 序列化后存储）
- */
-export async function persistPageContent(pageId: number, canvasData: CanvasStorageData): Promise<void> {
-  try {
-    await Page.update({ content: JSON.stringify(canvasData) }, { where: { id: pageId } });
-  } catch (err) {
-    console.error(`[collab] 房间 ${pageId} 落库失败`, err);
+/** 各页面的落库调度表（pageId -> 状态） */
+const persistStates = new Map<number, PagePersistState>();
+
+function getPersistState(pageId: number): PagePersistState {
+  let state = persistStates.get(pageId);
+  if (!state) {
+    state = { pending: null, lastPersistAt: 0, queue: Promise.resolve() };
+    persistStates.set(pageId, state);
   }
+  return state;
+}
+
+/**
+ * 协作修改落库（节流）：距上次写库超过 PERSIST_DELAY_MS 立即落库，否则仅覆盖暂存数据
+ * @param pageId 页面 ID
+ * @param canvasData 最新画布数据
+ */
+export function schedulePersistPageContent(pageId: number, canvasData: CanvasStorageData): void {
+  const state = getPersistState(pageId);
+  state.pending = canvasData;
+  if (Date.now() - state.lastPersistAt < PERSIST_DELAY_MS) return;
+  persist(pageId, state);
+}
+
+/**
+ * 冲刷暂存数据（成员退出、房间销毁时调用）：无视时间间隔直接落库
+ * @param pageId 页面 ID
+ * @param canvasData 最新画布数据
+ */
+export function flushPersistPageContent(pageId: number, canvasData: CanvasStorageData): void {
+  const state = getPersistState(pageId);
+  state.pending = canvasData;
+  persist(pageId, state);
+}
+
+/** 把暂存数据排入串行写队列（promise 链保证同页写库有序）；失败回补暂存，待下次触发重试 */
+function persist(pageId: number, state: PagePersistState): void {
+  const data = state.pending;
+  if (!data) return;
+  state.pending = null;
+  state.lastPersistAt = Date.now();
+  // 串行写库：本次 UPDATE 接在上一次完成后才发起，避免并发写乱序覆盖
+  state.queue = state.queue.then(async () => {
+    try {
+      await Page.update({ content: JSON.stringify(data) }, { where: { id: pageId } });
+    } catch (err) {
+      console.error(`[collab] 页面 ${pageId} 落库失败，待下次触发重试`, err);
+      if (!state.pending) state.pending = data;
+    }
+  });
 }
 
 /**
