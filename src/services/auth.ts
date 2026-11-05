@@ -96,7 +96,7 @@ export async function issueRefreshToken(
 }
 
 /**
- * 刷新访问令牌：旧刷新令牌作废并轮换新的
+ * 刷新访问令牌
  * @param token 旧刷新令牌
  * @returns LoginResult
  */
@@ -124,7 +124,7 @@ export async function refresh(token: string): Promise<LoginResult> {
       throw new BizException(ResultCodeEnum.UNAUTHORIZED, '用户不存在，请重新登录');
     }
 
-    // 新令牌继承旧令牌的过期时间
+    // 轮换新令牌，减少暴露风险
     const newRefreshToken = await issueRefreshToken(user.id, t, oldToken.expiresAt);
     return {
       accessToken: generateToken(user.id, user.username, user.sessionId),
@@ -139,7 +139,20 @@ export async function refresh(token: string): Promise<LoginResult> {
  * @param token 刷新令牌
  */
 export async function logout(token: string): Promise<void> {
-  await RefreshToken.update({ revoked: 1 }, { where: { token } });
+  await sequelize.transaction(async (t) => {
+    const record = await RefreshToken.findOne({ where: { token }, transaction: t });
+    if (!record) return;
+    // 作废刷新令牌
+    await RefreshToken.update(
+      { revoked: 1 },
+      { where: { userId: record.userId, revoked: 0 }, transaction: t },
+    );
+    // 清空会话 ID
+    await User.update(
+      { sessionId: '' },
+      { where: { id: record.userId }, transaction: t },
+    );
+  });
 }
 
 /** 访问令牌校验结果 */
