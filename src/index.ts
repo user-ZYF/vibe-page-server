@@ -3,8 +3,12 @@ import { createServer } from 'node:http';
 import { createApp } from './app.js';
 import { sequelize } from './db.js';
 import { attachCollabServer } from './ws/index.js';
+import { cleanTmpDirs } from './services/file.js';
 // 引入 models 确保表结构已注册到 sequelize
 import './models/index.js';
+
+/** 分片临时目录清理任务执行间隔 */
+const TMP_CLEAN_INTERVAL = 60 * 60 * 1000;
 
 /** 启动入口：连接数据库 → 同步表结构 → 启动 HTTP 服务 */
 async function main(): Promise<void> {
@@ -24,6 +28,9 @@ async function main(): Promise<void> {
     server.listen(port, () => {
       console.log(`vibepage-server 已启动：http://localhost:${port}`);
     });
+    // 定时清理中断上传残留的分片临时目录（启动时先执行一次，之后每小时执行）
+    cleanTmpDirs();
+    setInterval(cleanTmpDirs, TMP_CLEAN_INTERVAL).unref();
   } catch (err) {
     console.error('启动失败', err);
     process.exit(1);

@@ -9,8 +9,8 @@ import type { FileCheckResult, FileChunkResult } from '../types/file.js';
 const UPLOAD_DIR = path.resolve(import.meta.dirname, '../../uploads');
 const TMP_DIR = path.join(UPLOAD_DIR, 'tmp');
 
-/** 分片临时目录总大小上限（1GB），超出时从最旧的开始删 */
-const TMP_MAX_BYTES = 1024 * 1024 * 1024;
+/** 分片临时目录最大存活时间（超过视为中断残留，由定时任务清理） */
+export const TMP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /** MD5 十六进制（32 位），同时防止路径穿越 */
 const HASH_RE = /^[a-f0-9]{32}$/;
@@ -55,6 +55,7 @@ export function checkUpload(
   const tmpDir = path.join(TMP_DIR, fileHash);
   const needed: number[] = [];
   for (let i = 0; i < totalChunks; i++) {
+    // 分片以索引命名，方便合并时知晓顺序
     if (!fs.existsSync(path.join(tmpDir, String(i)))) needed.push(i);
   }
   return { needed };
@@ -94,16 +95,16 @@ export function saveChunk(
   // 自动创建父目录，目录已存在时不报错
   fs.mkdirSync(tmpDir, { recursive: true });
   fs.writeFileSync(path.join(tmpDir, String(index)), data);
-  // 容量超出上限时从最旧的开始删，中断残留不会一直堆积
-  cleanTmpDirs(TMP_MAX_BYTES);
 
   if (countChunks(tmpDir) < totalChunks) {
     return {};
   }
   // 按顺序合并分片数据，构造完整文件
-  const mergedData = Buffer.concat(
-    Array.from({ length: totalChunks }, (_, i) => fs.readFileSync(path.join(tmpDir, String(i)))),
-  );
+  const chunkBuffers = [];
+  for (let i = 0; i < totalChunks; i++) {
+    chunkBuffers.push(fs.readFileSync(path.join(tmpDir, String(i))));
+  }
+  const mergedData = Buffer.concat(chunkBuffers);
   fs.writeFileSync(final, mergedData);
   // 删除目录以及内部的分片数据文件，目录不存在时不报错
   fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -115,47 +116,24 @@ function countChunks(tmpDir: string): number {
   return fs.readdirSync(tmpDir).length;
 }
 
-/** 递归统计目录大小（字节） */
-function dirSize(dir: string): number {
-  let size = 0;
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, entry.name);
-    size += entry.isDirectory() ? dirSize(p) : fs.statSync(p).size;
-  }
-  return size;
-}
-
 /**
- * 清理分片临时目录：总大小超过 maxBytes 时按最后修改时间从最旧的开始删除，直到达标
- * @param maxBytes tmp 目录总大小上限（字节）
+ * 清理分片临时目录：删除最后修改时间超过 maxAgeMs 的目录（中断上传的残留）
+ * @param maxAgeMs 临时目录最大存活时间（毫秒），默认 TMP_MAX_AGE_MS
  * @returns 删除的目录数
  */
-export function cleanTmpDirs(maxBytes: number): number {
+export function cleanTmpDirs(maxAgeMs = TMP_MAX_AGE_MS): number {
   if (!fs.existsSync(TMP_DIR)) return 0;
 
-  // 收集各分片目录的大小与最后修改时间
-  const dirs: { dir: string; mtimeMs: number; size: number }[] = [];
+  const deadline = Date.now() - maxAgeMs;
+  let removed = 0;
   for (const name of fs.readdirSync(TMP_DIR)) {
     const dir = path.join(TMP_DIR, name);
     try {
-      dirs.push({ dir, mtimeMs: fs.statSync(dir).mtimeMs, size: dirSize(dir) });
-    } catch {
-      // 目录被并发删除等异常跳过
-    }
-  }
-
-  // 容量超出上限时，从最旧的目录开始删到达标
-  dirs.sort((a, b) => a.mtimeMs - b.mtimeMs);
-  let totalSize = dirs.reduce((sum, item) => sum + item.size, 0);
-  let removed = 0;
-  for (const item of dirs) {
-    if (totalSize <= maxBytes) break;
-    try {
-      fs.rmSync(item.dir, { recursive: true, force: true });
+      if (fs.statSync(dir).mtimeMs > deadline) continue;
+      fs.rmSync(dir, { recursive: true, force: true });
       removed++;
-      totalSize -= item.size;
     } catch {
-      // 删除失败跳过，不影响其他目录清理
+      // 目录被并发删除或删除失败时跳过，不影响其他目录清理
     }
   }
   return removed;
