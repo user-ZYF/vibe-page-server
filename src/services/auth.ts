@@ -2,7 +2,7 @@ import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Op, type Transaction } from 'sequelize';
+import type { Transaction } from 'sequelize';
 import { BizException } from '../common/biz-exception.js';
 import { ResultCodeEnum } from '../constants/result-code.js';
 import { sequelize } from '../db.js';
@@ -102,23 +102,16 @@ export async function issueRefreshToken(
  */
 export async function refresh(token: string): Promise<LoginResult> {
   return sequelize.transaction(async (t) => {
-    // 条件更新作废旧令牌：行锁保证并发下只有一个请求能成功，防止令牌重复使用
-    const [updated] = await RefreshToken.update(
-      { revoked: 1 },
-      {
-        where: {
-          token,
-          revoked: 0,
-          expiresAt: { [Op.gt]: Date.now() },
-        },
-        transaction: t,
-      },
-    );
-    if (updated === 0) {
+    // 行锁锁定旧令牌并校验状态：并发刷新只有一个请求能成功，防止令牌重复使用
+    const oldToken = await RefreshToken.findOne({
+      where: { token },
+      transaction: t,
+      lock: t.LOCK.UPDATE,
+    });
+    if (!oldToken || oldToken.revoked !== 0 || oldToken.expiresAt <= Date.now()) {
       throw new BizException(ResultCodeEnum.UNAUTHORIZED, '刷新令牌无效或已过期，请重新登录');
     }
-
-    const oldToken = (await RefreshToken.findOne({ where: { token }, transaction: t }))!;
+    await oldToken.update({ revoked: 1 }, { transaction: t });
     const user = await User.findByPk(oldToken.userId, { transaction: t });
     if (!user) {
       throw new BizException(ResultCodeEnum.UNAUTHORIZED, '用户不存在，请重新登录');
