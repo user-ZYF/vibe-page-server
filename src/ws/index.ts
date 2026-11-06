@@ -40,7 +40,7 @@ export function attachCollabServer(server: Server): void {
   const connCtx = new Map<WebSocket, ConnContext>();
   const heartbeat = setInterval(() => {
     sweepConnections();
-    // 定期校验会话有效性，防止会话已失效但旧连接一直挂着（登出、别处登录但没进房、账号被删等情况）
+    // 定期校验会话有效性，防止会话已失效但旧连接一直挂着（同会话不同页面的登出、别处登录但没进房、账号被删等情况）
     checkSessions();
   }, 30000);
 

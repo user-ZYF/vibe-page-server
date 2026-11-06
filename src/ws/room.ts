@@ -53,7 +53,7 @@ export function removeRoom(room: CollabRoom): void {
  * @param member 成员；房间已满直接关闭连接；同账号已在房间时踢掉旧连接，由新连接顶替
  */
 export function joinRoom(room: CollabRoom, member: RoomMember): void {
-  // 同账号已在房间中：移出旧成员并断开其连接
+  // 同账号已在房间中：移出旧成员并断开其连接，阻止同账号多次进入同一个房间
   const existing = findMember(room, member.userId);
   if (existing) {
     leaveRoom(room, existing.socket);
