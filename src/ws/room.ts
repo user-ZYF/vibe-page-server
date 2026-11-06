@@ -50,17 +50,18 @@ export function removeRoom(room: CollabRoom): void {
 /**
  * 成员加入房间
  * @param room 房间
- * @param member 成员；房间已满或同账号重复加入时直接关闭连接
+ * @param member 成员；房间已满直接关闭连接；同账号已在房间时踢掉旧连接，由新连接顶替
  */
 export function joinRoom(room: CollabRoom, member: RoomMember): void {
+  // 同账号已在房间中：移出旧成员并断开其连接
+  const existing = findMember(room, member.userId);
+  if (existing) {
+    leaveRoom(room, existing.socket);
+    existing.socket.close(CollabCloseCodeEnum.DUPLICATE_USER);
+  }
   // 房间人数已达上限
   if (room.members.size >= MAX_ROOM_MEMBERS) {
     member.socket.close(CollabCloseCodeEnum.ROOM_FULL);
-    return;
-  }
-  // 同账号已在房间中：拒绝重复加入
-  if (findMember(room, member.userId)) {
-    member.socket.close(CollabCloseCodeEnum.DUPLICATE_USER);
     return;
   }
   room.members.set(member.socket, member);

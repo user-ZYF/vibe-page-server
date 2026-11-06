@@ -12,4 +12,6 @@ export enum CollabCloseCodeEnum {
   ROOM_FULL = 4001,
   /** 同账号已加入 */
   DUPLICATE_USER = 4002,
+  /** 会话失效（账号在其他设备登录或已登出） */
+  FORCE_OFFLINE = 4003,
 }

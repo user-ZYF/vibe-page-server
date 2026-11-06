@@ -3,10 +3,11 @@ import type { Duplex } from "node:stream";
 import type { IncomingMessage } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { CanvasStorageData } from "../types/canvas.js";
-import { Page } from "../models/index.js";
-import type { CollabClientMsg, CollabRoom } from "../types/collab.js";
+import { Page, User } from "../models/index.js";
+import type { CollabClientMsg, CollabRoom, ConnContext } from "../types/collab.js";
 import { CollabMsgTypeEnum } from "../types/collab.js";
 import { ResultCodeEnum } from "../constants/result-code.js";
+import { CollabCloseCodeEnum } from "../constants/collab.js";
 import { resolveTokenUser } from "../services/auth.js";
 import {
   getOrCreateRoom,
@@ -20,14 +21,6 @@ import {
 
 /** WebSocket 挂载路径 */
 const WS_PATH = "/ws";
-
-/** 连接上下文（鉴权通过后挂到 socket 上） */
-interface ConnContext {
-  /** 当前用户 ID */
-  userId: number;
-  /** 所在房间 */
-  room: CollabRoom;
-}
 
 /**
  * 把协作 WebSocket 服务挂到现有 HTTP 服务上
@@ -43,10 +36,23 @@ export function attachCollabServer(server: Server): void {
   // noServer 模式下 wss.clients 为空，需自行跟踪连接做心跳
   const clients = new Set<WebSocket>();
   const aliveClients = new Set<WebSocket>();
+  // 每条连接对应的鉴权上下文，供周期性会话校验使用
+  const connCtx = new Map<WebSocket, ConnContext>();
   const heartbeat = setInterval(() => {
+    sweepConnections();
+    // 定期校验会话有效性，防止会话已失效但旧连接一直挂着（登出、别处登录但没进房、账号被删等情况）
+    checkSessions();
+  }, 30000);
+
+  // 服务器断开
+  wss.on("close", () => clearInterval(heartbeat));
+
+  /** 心跳巡检 */
+  function sweepConnections(): void {
     for (const ws of clients) {
       if (!aliveClients.has(ws)) {
         clients.delete(ws);
+        connCtx.delete(ws);
         // 关闭服务器侧的半连接状态
         ws.terminate();
         continue;
@@ -54,9 +60,28 @@ export function attachCollabServer(server: Server): void {
       aliveClients.delete(ws);
       ws.ping();
     }
-  }, 30000);
-  // 服务器断开
-  wss.on("close", () => clearInterval(heartbeat));
+  }
+
+  /**
+   * 周期性校验每条连接的会话有效性
+   */
+  async function checkSessions(): Promise<void> {
+    for (const [ws, ctx] of connCtx) {
+      try {
+        const user = await User.findByPk(ctx.userId, {
+          attributes: ["sessionId"],
+        });
+        if (user && user.sessionId === ctx.sessionId) continue;
+      } catch {
+        // 数据库异常不该强制所有人下线
+        continue;
+      }
+      clients.delete(ws);
+      aliveClients.delete(ws);
+      connCtx.delete(ws);
+      ws.close(CollabCloseCodeEnum.FORCE_OFFLINE);
+    }
+  }
 
   // 协议升级
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
@@ -70,6 +95,7 @@ export function attachCollabServer(server: Server): void {
     (ws: WebSocket, _req: IncomingMessage, ctx: ConnContext) => {
       clients.add(ws);
       aliveClients.add(ws);
+      connCtx.set(ws, ctx);
       // 客户端心跳
       ws.on("pong", () => aliveClients.add(ws));
       // 客户端消息
@@ -87,6 +113,7 @@ export function attachCollabServer(server: Server): void {
       ws.on("close", () => {
         clients.delete(ws);
         aliveClients.delete(ws);
+        connCtx.delete(ws);
         const { room } = ctx;
         leaveRoom(room, ws);
         // 房间无人：销毁
@@ -163,6 +190,7 @@ async function handleUpgrade(
         // 手动执行wss.on('connection')
         wss.emit("connection", ws, req, {
           userId: user.id,
+          sessionId: user.sessionId,
           room,
         } as ConnContext);
       },

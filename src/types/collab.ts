@@ -237,6 +237,16 @@ export interface RoomMeta {
   userId: number;
 }
 
+/** 连接上下文（WebSocket 鉴权通过后挂到连接上） */
+export interface ConnContext {
+  /** 当前用户 ID */
+  userId: number;
+  /** 握手时的会话 ID */
+  sessionId: string;
+  /** 所在房间 */
+  room: CollabRoom;
+}
+
 /** 协作房间：每个画布页一个，持有最新画布数据与版本号 */
 export interface CollabRoom {
   /** 页面 ID */
