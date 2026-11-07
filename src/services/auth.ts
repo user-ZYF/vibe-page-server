@@ -7,7 +7,7 @@ import { BizException } from '../common/biz-exception.js';
 import { ResultCodeEnum } from '../constants/result-code.js';
 import { sequelize } from '../db.js';
 import { Page, RefreshToken, User, type LoginResult, type UserInfo } from '../models/index.js';
-import type { LoginBody, RegisterBody } from '../types/auth.js';
+import type { LoginBody, RegisterBody, TokenAuthResult } from '../types/auth.js';
 import { generateToken, parseToken } from '../utils/jwt.js';
 
 /** 新用户默认画布标题 */
@@ -54,7 +54,7 @@ export async function login({ username, password }: LoginBody): Promise<LoginRes
 
     return {
       accessToken: generateToken(user.id, user.username, user.sessionId),
-      refreshToken: await issueRefreshToken(user.id, t),
+      refreshToken: await issueRefreshToken(user.id, user.sessionId, t),
       userInfo: user.toJSON(),
     };
   });
@@ -73,12 +73,14 @@ async function seedSamplePage(userId: number): Promise<void> {
 /**
  * 为指定用户签发刷新令牌
  * @param userId 用户 ID
+ * @param sessionId 绑定的会话 ID，仅允许该会话刷新
  * @param transaction 可选事务
  * @param expiresAt 过期时间（毫秒时间戳）
  * @returns 刷新令牌
  */
 export async function issueRefreshToken(
   userId: number,
+  sessionId: string,
   transaction?: Transaction,
   expiresAt?: number,
 ): Promise<string> {
@@ -86,6 +88,7 @@ export async function issueRefreshToken(
   const record = await RefreshToken.create(
     {
       userId,
+      sessionId,
       token: randomUUID().replaceAll('-', ''),
       expiresAt,
       revoked: 0,
@@ -102,23 +105,36 @@ export async function issueRefreshToken(
  */
 export async function refresh(token: string): Promise<LoginResult> {
   return sequelize.transaction(async (t) => {
-    // 行锁锁定旧令牌并校验状态：并发刷新只有一个请求能成功，防止令牌重复使用
+    // 行锁锁定旧令牌并校验状态：并发刷新只有一个请求能成功，防止令牌重复使用（导致一个旧Refresh Token生成多个新Refresh Token）
     const oldToken = await RefreshToken.findOne({
       where: { token },
       transaction: t,
       lock: t.LOCK.UPDATE,
     });
-    if (!oldToken || oldToken.revoked !== 0 || oldToken.expiresAt <= Date.now()) {
+    if (!oldToken || oldToken.revoked !== 0) {
       throw new BizException(ResultCodeEnum.UNAUTHORIZED, '刷新令牌无效或已过期，请重新登录');
     }
-    await oldToken.update({ revoked: 1 }, { transaction: t });
     const user = await User.findByPk(oldToken.userId, { transaction: t });
     if (!user) {
       throw new BizException(ResultCodeEnum.UNAUTHORIZED, '用户不存在，请重新登录');
     }
+    // 会话一致性：令牌签发时绑定的会话必须仍是当前会话，否则是已被新登录顶替的残留令牌
+    if (oldToken.sessionId !== user.sessionId) {
+      await oldToken.update({ revoked: 1 }, { transaction: t });
+      throw new BizException(ResultCodeEnum.UNAUTHORIZED, '刷新令牌无效或已过期，请重新登录');
+    }
+    if (oldToken.expiresAt <= Date.now()) {
+      // 活跃令牌自然过期说明会话终结，清空 sessionId 让残留访问令牌立即失效
+      await User.update(
+        { sessionId: '' },
+        { where: { id: user.id }, transaction: t },
+      );
+      throw new BizException(ResultCodeEnum.UNAUTHORIZED, '刷新令牌无效或已过期，请重新登录');
+    }
+    await oldToken.update({ revoked: 1 }, { transaction: t });
 
     // 轮换新令牌，减少暴露风险
-    const newRefreshToken = await issueRefreshToken(user.id, t, oldToken.expiresAt);
+    const newRefreshToken = await issueRefreshToken(user.id, user.sessionId, t, oldToken.expiresAt);
     return {
       accessToken: generateToken(user.id, user.username, user.sessionId),
       refreshToken: newRefreshToken,
@@ -148,17 +164,8 @@ export async function logout(token: string): Promise<void> {
   });
 }
 
-/** 访问令牌校验结果 */
-export interface TokenAuthResult {
-  /** 校验结果码，SUCCESS 表示通过 */
-  code: ResultCodeEnum;
-  /** 校验通过的用户，仅 code 为 SUCCESS 时有值 */
-  user: User | null;
-}
-
 /**
- * 校验访问令牌并解析出有效用户：JWT 验签 + 用户存在性 + 会话一致性（单点登录）
- * authRequired 中间件与协作 WebSocket 握手共用
+ * 校验访问令牌并解析出有效用户：JWT 验签 + 用户存在性 + 会话一致性
  * @param token 访问令牌（不含 Bearer 前缀）
  * @returns 校验结果
  */

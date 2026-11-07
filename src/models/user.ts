@@ -21,7 +21,7 @@ export class User extends Model<InferAttributes<User>, InferCreationAttributes<U
   declare password: string;
   /** 昵称 */
   declare nickname: CreationOptional<string>;
-  /** 当前会话 ID（单点登录：新登录覆盖，旧会话令牌随之失效） */
+  /** 当前会话 ID */
   declare sessionId: CreationOptional<string>;
   /** 逻辑删除标记 */
   declare deleted: CreationOptional<number>;

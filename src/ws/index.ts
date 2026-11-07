@@ -58,6 +58,7 @@ export function attachCollabServer(server: Server): void {
         continue;
       }
       aliveClients.delete(ws);
+      // 向客户端发送一个ping帧（客户端收到后会自动回pong帧）
       ws.ping();
     }
   }
@@ -66,16 +67,26 @@ export function attachCollabServer(server: Server): void {
    * 周期性校验每条连接的会话有效性
    */
   async function checkSessions(): Promise<void> {
+    // 收集所有在线连接的 userId
+    const userIdSet = new Set<number>();
+    for (const ctx of connCtx.values()) {
+      userIdSet.add(ctx.userId);
+    }
+    const userIds = [...userIdSet];
+    if (userIds.length === 0) return;
+    let sessionMap: Map<number, string>;
+    try {
+      const users = await User.findAll({
+        where: { id: userIds },
+        attributes: ["id", "sessionId"],
+      });
+      sessionMap = new Map(users.map((u) => [u.id, u.sessionId]));
+    } catch {
+      // 数据库异常不该强制所有人下线
+      return;
+    }
     for (const [ws, ctx] of connCtx) {
-      try {
-        const user = await User.findByPk(ctx.userId, {
-          attributes: ["sessionId"],
-        });
-        if (user && user.sessionId === ctx.sessionId) continue;
-      } catch {
-        // 数据库异常不该强制所有人下线
-        continue;
-      }
+      if (sessionMap.get(ctx.userId) === ctx.sessionId) continue;
       clients.delete(ws);
       aliveClients.delete(ws);
       connCtx.delete(ws);
