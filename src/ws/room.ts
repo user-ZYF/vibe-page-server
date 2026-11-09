@@ -65,6 +65,7 @@ export function joinRoom(room: CollabRoom, member: RoomMember): void {
     return;
   }
   room.members.set(member.socket, member);
+  // 发送init数据
   send(member.socket, {
     type: MsgType.INIT,
     title: room.title,
@@ -73,6 +74,7 @@ export function joinRoom(room: CollabRoom, member: RoomMember): void {
     members: memberList(room),
     selections: selectionList(room),
   });
+  // 广播成员列表
   broadcastMembers(room);
 }
 
@@ -129,14 +131,20 @@ export function handleOp(room: CollabRoom, socket: WebSocket, msg: CollabOpMsg):
 // ==================== 选中标记 ====================
 
 /**
- * 处理元素选中标记：仅作展示，不拒绝；同元素可被多人同时选中，各自保留标记
+ * 处理元素选中标记：仅作展示；同元素可被多人同时选中，各自保留标记
+ * 基准不一致（客户端数据过期）：拒收并回传最新画布数据，客户端对齐后可重新选中
  * @param room 房间
  * @param socket 发送者连接
  * @param elementId 元素 ID
+ * @param baseData 客户端基准画布数据
  */
-export function handleSelect(room: CollabRoom, socket: WebSocket, elementId: string): void {
+export function handleSelect(room: CollabRoom, socket: WebSocket, elementId: string, baseData: CanvasStorageData): void {
   const member = room.members.get(socket);
   if (!member || !elementId) return;
+  if (!isDeepStrictEqual(baseData, room.canvasData)) {
+    send(socket, { type: MsgType.REJECT, canvasData: room.canvasData });
+    return;
+  }
   const userIds = room.selections.get(elementId) ?? [];
   if (userIds.includes(member.userId)) return;
   userIds.push(member.userId);
@@ -146,13 +154,19 @@ export function handleSelect(room: CollabRoom, socket: WebSocket, elementId: str
 
 /**
  * 处理取消选中标记（仅标记持有者本人可移除）
+ * 基准不一致（客户端数据过期）：拒收并回传最新画布数据
  * @param room 房间
  * @param socket 发送者连接
  * @param elementId 元素 ID
+ * @param baseData 客户端基准画布数据
  */
-export function handleDeselect(room: CollabRoom, socket: WebSocket, elementId: string): void {
+export function handleDeselect(room: CollabRoom, socket: WebSocket, elementId: string, baseData: CanvasStorageData): void {
   const member = room.members.get(socket);
   if (!member || !elementId) return;
+  if (!isDeepStrictEqual(baseData, room.canvasData)) {
+    send(socket, { type: MsgType.REJECT, canvasData: room.canvasData });
+    return;
+  }
   if (dropSelection(room, elementId, member.userId)) {
     broadcastSelection(room, elementId);
   }

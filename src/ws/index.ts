@@ -115,6 +115,7 @@ export function attachCollabServer(server: Server): void {
         console.log("[collab] 服务端收到:", raw.toString().slice(0, 200));
         let msg: CollabClientMsg;
         try {
+          // 客户端发送的是JSON字符串，需要解析为JSON对象
           msg = JSON.parse(String(raw));
         } catch {
           return;
@@ -221,12 +222,12 @@ function dispatch(ws: WebSocket, room: CollabRoom, msg: CollabClientMsg): void {
       }
       return;
     case CollabMsgTypeEnum.SELECT:
-      if (typeof msg.elementId === "string")
-        handleSelect(room, ws, msg.elementId);
+      if (typeof msg.elementId === "string" && msg.baseData)
+        handleSelect(room, ws, msg.elementId, msg.baseData);
       return;
     case CollabMsgTypeEnum.DESELECT:
-      if (typeof msg.elementId === "string")
-        handleDeselect(room, ws, msg.elementId);
+      if (typeof msg.elementId === "string" && msg.baseData)
+        handleDeselect(room, ws, msg.elementId, msg.baseData);
       return;
     default:
       return;
