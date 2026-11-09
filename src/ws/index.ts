@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import type { Duplex } from "node:stream";
 import type { IncomingMessage } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
+import qs from "qs";
 import type { CanvasStorageData } from "../types/canvas.js";
 import { Page, User } from "../models/index.js";
 import type { CollabClientMsg, CollabRoom, ConnContext } from "../types/collab.js";
@@ -137,8 +138,7 @@ export function attachCollabServer(server: Server): void {
 }
 
 /**
- * 升级请求鉴权：校验 JWT 会话、画布存在性与访问权
- * 失败直接断开 TCP，不进入 ws 连接
+ * 升级请求鉴权
  */
 async function handleUpgrade(
   wss: WebSocketServer,
@@ -147,14 +147,15 @@ async function handleUpgrade(
   head: Buffer,
 ): Promise<void> {
   try {
-    const url = new URL(req.url ?? "", "http://localhost");
-    if (url.pathname !== WS_PATH) {
+    const [pathname, query = ""] = (req.url ?? "").split("?");
+    if (pathname !== WS_PATH) {
       socket.destroy();
       return;
     }
-    const pageId = Number(url.searchParams.get("pageId"));
-    const token = url.searchParams.get("token") ?? "";
-    const share = url.searchParams.get("share") ?? "";
+    const params = qs.parse(query);
+    const pageId = Number(params.pageId);
+    const token = typeof params.token === "string" ? params.token : "";
+    const share = typeof params.share === "string" ? params.share : "";
     if (!Number.isInteger(pageId) || pageId <= 0 || !token) {
       socket.destroy();
       return;
