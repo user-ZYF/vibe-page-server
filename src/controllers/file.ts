@@ -32,7 +32,7 @@ export function checkController(req: Request, res: Response): void {
 /**
  * 上传一个分片
  */
-export function chunkController(req: Request, res: Response): void {
+export async function chunkController(req: Request, res: Response): Promise<void> {
   const fileHash = assertFileHash(req.body.fileHash);
   const chunkHash = assertFileHash(req.body.chunkHash, 'chunkHash');
   requireNonEmpty(req.body, 'fileName');
@@ -48,6 +48,6 @@ export function chunkController(req: Request, res: Response): void {
   }
 
   const fileName = String(req.body.fileName);
-  const result = saveChunk(fileHash, fileName, index, chunkHash, totalChunks, data);
+  const result = await saveChunk(fileHash, fileName, index, chunkHash, totalChunks, data);
   res.json(Result.success(result));
 }

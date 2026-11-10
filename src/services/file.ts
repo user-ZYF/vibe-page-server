@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import { pipeline, finished } from 'node:stream/promises';
 import path from 'node:path';
 import { BizException } from '../common/biz-exception.js';
 import { ResultCodeEnum } from '../constants/result-code.js';
@@ -70,14 +71,14 @@ export function checkUpload(
  * @param totalChunks 分片总数
  * @param data 分片内容
  */
-export function saveChunk(
+export async function saveChunk(
   fileHash: string,
   fileName: string,
   index: number,
   chunkHash: string,
   totalChunks: number,
   data: Buffer,
-): FileChunkResult {
+): Promise<FileChunkResult> {
   if (index < 0 || index >= totalChunks) {
     throw new BizException(ResultCodeEnum.BAD_REQUEST, 'index 参数格式错误');
   }
@@ -99,16 +100,29 @@ export function saveChunk(
   if (countChunks(tmpDir) < totalChunks) {
     return {};
   }
-  // 按顺序合并分片数据，构造完整文件
-  const chunkBuffers = [];
-  for (let i = 0; i < totalChunks; i++) {
-    chunkBuffers.push(fs.readFileSync(path.join(tmpDir, String(i))));
-  }
-  const mergedData = Buffer.concat(chunkBuffers);
-  fs.writeFileSync(final, mergedData);
+  // 按顺序流式合并分片数据，构造完整文件（避免一次性加载到内存）
+  await mergeChunks(tmpDir, final, totalChunks);
   // 删除目录以及内部的分片数据文件，目录不存在时不报错
   fs.rmSync(tmpDir, { recursive: true, force: true });
   return { url: `/uploads/${path.basename(final)}` };
+}
+
+/** 流式合并：逐个把分片文件 pipe 到目标文件，任意时刻只有一个分片在内存中 */
+async function mergeChunks(tmpDir: string, final: string, totalChunks: number): Promise<void> {
+  const out = fs.createWriteStream(final);
+  try {
+    for (let i = 0; i < totalChunks; i++) {
+      // end: false 保持写入流打开，等所有分片写完再关闭（pipeline自动处理背压问题）
+      await pipeline(fs.createReadStream(path.join(tmpDir, String(i))), out, { end: false });
+    }
+    out.end();
+    await finished(out);
+  } catch (err) {
+    // 合并失败时销毁写入流并删除残缺的合并文件，防止被误认为已完成
+    out.destroy();
+    fs.rmSync(final, { force: true });
+    throw err;
+  }
 }
 
 /** 统计临时目录中已收到的分片数 */
