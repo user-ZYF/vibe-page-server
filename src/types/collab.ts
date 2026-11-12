@@ -1,5 +1,5 @@
 import type { WebSocket } from 'ws';
-import type { CanvasStorageData, CanvasInnerElement, CanvasStyleRule } from './canvas.js';
+import type { CanvasStorageData, CanvasInnerElement } from './canvas.js';
 
 /**
  * 协作消息类型（WebSocket 消息的 type 字段，数字枚举）
@@ -38,17 +38,15 @@ export enum CollabOpTypeEnum {
   MOVE = 3,
   /** 更新元素属性 */
   UPDATE = 4,
-  /** 写入/覆盖样式规则 */
+  /** 样式规则设置 */
   STYLE_SET = 5,
-  /** 删除样式规则 */
-  STYLE_REMOVE = 6,
 }
 
-/** 新增元素操作（beforeId 为插入点后的兄弟元素 id，null 表示追加到末尾；parentId 为空串表示根级） */
+/** 新增元素操作（beforeId 为插入点后的兄弟元素 id，null 表示追加到末尾） */
 export interface CollabAddOp {
   /** 操作类型 */
   type: CollabOpTypeEnum.ADD;
-  /** 目标父元素 id（空串表示根级 children） */
+  /** 目标父元素 id */
   parentId: string;
   /** 插入到该元素之前（null 表示追加） */
   beforeId: string | null;
@@ -70,7 +68,7 @@ export interface CollabMoveOp {
   type: CollabOpTypeEnum.MOVE;
   /** 元素 id */
   id: string;
-  /** 目标父元素 id（空串表示根级） */
+  /** 目标父元素 id */
   parentId: string;
   /** 插入到该元素之前（null 表示追加） */
   beforeId: string | null;
@@ -86,24 +84,18 @@ export interface CollabUpdateOp {
   props: Record<string, unknown>;
 }
 
-/** 写入/覆盖样式规则（按 selector + type 定位） */
-export interface CollabStyleSetOp {
+/** 样式规则设置 */
+export interface CollabStyleOp {
   /** 操作类型 */
   type: CollabOpTypeEnum.STYLE_SET;
-  /** 样式规则 */
-  rule: CanvasStyleRule;
-}
-
-/** 删除样式规则 */
-export interface CollabStyleRemoveOp {
-  /** 操作类型 */
-  type: CollabOpTypeEnum.STYLE_REMOVE;
   /** 选择器 */
   selector: string;
   /** 规则类型 */
   ruleType: number;
   /** 完整 at-rule 文本 */
   atRuleCssText?: string;
+  /** 样式声明（值为 null 表示删除该属性；缺省表示删除整条规则） */
+  style?: Record<string, string | null>;
 }
 
 /** 协作语义操作 */
@@ -112,8 +104,7 @@ export type CollabOp =
   | CollabRemoveOp
   | CollabMoveOp
   | CollabUpdateOp
-  | CollabStyleSetOp
-  | CollabStyleRemoveOp;
+  | CollabStyleOp;
 
 /** 房间成员信息 */
 export interface CollabMember {
