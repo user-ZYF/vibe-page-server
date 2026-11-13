@@ -1,4 +1,4 @@
-﻿import { randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { BizException } from '../common/biz-exception.js';
 import { ResultCodeEnum } from '../constants/result-code.js';
 import { Page, type PageInfo, type PageListItem } from '../models/index.js';
@@ -127,19 +127,21 @@ export function flushPersistPageContent(pageId: number, canvasData: CanvasStorag
   persist(pageId, state);
 }
 
-/** 把暂存数据排入串行写队列（promise 链保证同页写库有序）；失败回补暂存，待下次触发重试 */
+/** 把写库任务排入串行队列（promise 链保证同页写库有序）；执行时取最新暂存数据，失败保留待下次触发重试 */
 function persist(pageId: number, state: PagePersistState): void {
-  const data = state.pending;
-  if (!data) return;
-  state.pending = null;
-  state.lastPersistAt = Date.now();
-  // 串行写库：本次 UPDATE 接在上一次完成后才发起，避免并发写乱序覆盖
+  // 写库和写完的时机无对应关系（后发起的 UPDATE 可能先完成），需串行保证旧数据不会覆盖新数据
   state.queue = state.queue.then(async () => {
+    // 执行时才取暂存：期间若有新数据进来，直接写最新一份，旧快照自动跳过
+    const data = state.pending;
+    if (!data) return;
+    state.lastPersistAt = Date.now();
     try {
       await Page.update({ content: JSON.stringify(data) }, { where: { id: pageId } });
+      // 写库期间暂存未被新数据覆盖才清空，否则保留更新的数据等下次写
+      if (state.pending === data) state.pending = null;
     } catch (err) {
+      // 失败：暂存原样保留，待下次触发重试
       console.error(`[collab] 页面 ${pageId} 落库失败，待下次触发重试`, err);
-      if (!state.pending) state.pending = data;
     }
   });
 }
