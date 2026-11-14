@@ -98,32 +98,39 @@ const persistStates = new Map<number, PagePersistState>();
 function getPersistState(pageId: number): PagePersistState {
   let state = persistStates.get(pageId);
   if (!state) {
-    state = { pending: null, lastPersistAt: 0, queue: Promise.resolve() };
+    state = { pending: null, timer: null, queue: Promise.resolve() };
     persistStates.set(pageId, state);
   }
   return state;
 }
 
 /**
- * 协作修改落库（节流）：距上次写库超过 PERSIST_DELAY_MS 立即落库，否则仅覆盖暂存数据
+ * 协作修改落库（防抖）：每次修改重置定时器，停止修改 PERSIST_DELAY_MS 后落库
  * @param pageId 页面 ID
  * @param canvasData 最新画布数据
  */
 export function schedulePersistPageContent(pageId: number, canvasData: CanvasStorageData): void {
   const state = getPersistState(pageId);
   state.pending = canvasData;
-  if (Date.now() - state.lastPersistAt < PERSIST_DELAY_MS) return;
-  persist(pageId, state);
+  if (state.timer) clearTimeout(state.timer);
+  state.timer = setTimeout(() => {
+    state.timer = null;
+    persist(pageId, state);
+  }, PERSIST_DELAY_MS);
 }
 
 /**
- * 冲刷暂存数据（成员退出、房间销毁时调用）：无视时间间隔直接落库
+ * 冲刷暂存数据（房间销毁时调用）：取消防抖定时器并直接落库
  * @param pageId 页面 ID
  * @param canvasData 最新画布数据
  */
 export function flushPersistPageContent(pageId: number, canvasData: CanvasStorageData): void {
   const state = getPersistState(pageId);
   state.pending = canvasData;
+  if (state.timer) {
+    clearTimeout(state.timer);
+    state.timer = null;
+  }
   persist(pageId, state);
 }
 
@@ -134,14 +141,19 @@ function persist(pageId: number, state: PagePersistState): void {
     // 执行时才取暂存：期间若有新数据进来，直接写最新一份，旧快照自动跳过
     const data = state.pending;
     if (!data) return;
-    state.lastPersistAt = Date.now();
     try {
       await Page.update({ content: JSON.stringify(data) }, { where: { id: pageId } });
       // 写库期间暂存未被新数据覆盖才清空，否则保留更新的数据等下次写
       if (state.pending === data) state.pending = null;
     } catch (err) {
-      // 失败：暂存原样保留，待下次触发重试
-      console.error(`[collab] 页面 ${pageId} 落库失败，待下次触发重试`, err);
+      // 失败：暂存原样保留并重启防抖定时器，PERSIST_DELAY_MS 后自动重试
+      console.error(`[collab] 页面 ${pageId} 落库失败，${PERSIST_DELAY_MS}ms 后重试`, err);
+      if (!state.timer && state.pending) {
+        state.timer = setTimeout(() => {
+          state.timer = null;
+          persist(pageId, state);
+        }, PERSIST_DELAY_MS);
+      }
     }
   });
 }

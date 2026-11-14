@@ -89,8 +89,6 @@ export function leaveRoom(room: CollabRoom, socket: WebSocket): void {
   room.members.delete(socket);
   releaseUserSelections(room, member.userId);
   broadcastMembers(room);
-  // 成员退出：冲刷可能仍在暂存中的画布数据
-  flushPersistPageContent(room.pageId, room.canvasData);
 }
 
 // ==================== 画布修改 ====================

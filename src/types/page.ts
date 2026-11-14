@@ -26,8 +26,8 @@ export interface ShareStatusResult {
 export interface PagePersistState {
   /** 暂存待写库的最新画布数据（null 表示无脏数据） */
   pending: CanvasStorageData | null;
-  /** 上次发起写库的时间戳（0 表示从未写过） */
-  lastPersistAt: number;
+  /** 防抖定时器：修改停止 PERSIST_DELAY_MS 后触发落库（null 表示未调度） */
+  timer: NodeJS.Timeout | null;
   /** 写库串行队列：后提交的写一定在前一个写完成后执行，避免乱序覆盖 */
   queue: Promise<void>;
 }
