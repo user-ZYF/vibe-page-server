@@ -14,7 +14,6 @@ import {
   getOrCreateRoom,
   handleSelect,
   handleOp,
-  handleDeselect,
   joinRoom,
   leaveRoom,
   removeRoom,
@@ -221,13 +220,9 @@ function dispatch(ws: WebSocket, room: CollabRoom, msg: CollabClientMsg): void {
         handleOp(room, ws, msg);
       }
       return;
-    case CollabMsgTypeEnum.SELECT:
-      if (typeof msg.elementId === "string" && msg.baseData)
-        handleSelect(room, ws, msg.elementId, msg.baseData);
-      return;
-    case CollabMsgTypeEnum.DESELECT:
-      if (typeof msg.elementId === "string" && msg.baseData)
-        handleDeselect(room, ws, msg.elementId, msg.baseData);
+    case CollabMsgTypeEnum.SELECTION:
+      if (msg.baseData)
+        handleSelect(room, ws, msg.cur ?? null, msg.baseData);
       return;
     default:
       return;

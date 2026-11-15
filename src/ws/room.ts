@@ -129,44 +129,39 @@ export function handleOp(room: CollabRoom, socket: WebSocket, msg: CollabOpMsg):
 // ==================== 选中标记 ====================
 
 /**
- * 处理元素选中标记：仅作展示；同元素可被多人同时选中，各自保留标记
+ * 处理元素选中变化：cur 为成员当前唯一选中，清扫其在其他元素上的标记后写入 cur（仅标记持有者本人可移除）
+ * 仅作展示；同元素可被多人同时选中，各自保留标记
  * 基准不一致（客户端数据过期）：拒收并回传最新画布数据，客户端对齐后可重新选中
  * @param room 房间
  * @param socket 发送者连接
- * @param elementId 元素 ID
+ * @param cur 当前选中的元素 ID（null 表示当前未选中）
  * @param baseData 客户端基准画布数据
  */
-export function handleSelect(room: CollabRoom, socket: WebSocket, elementId: string, baseData: CanvasStorageData): void {
+export function handleSelect(
+  room: CollabRoom,
+  socket: WebSocket,
+  cur: string | null,
+  baseData: CanvasStorageData,
+): void {
   const member = room.members.get(socket);
-  if (!member || !elementId) return;
+  if (!member) return;
   if (!isDeepStrictEqual(baseData, room.canvasData)) {
     send(socket, { type: MsgType.REJECT, canvasData: room.canvasData });
     return;
   }
-  const userIds = room.selections.get(elementId) ?? [];
-  if (userIds.includes(member.userId)) return;
-  userIds.push(member.userId);
-  room.selections.set(elementId, userIds);
-  broadcastSelection(room, elementId);
-}
-
-/**
- * 处理取消选中标记（仅标记持有者本人可移除）
- * 基准不一致（客户端数据过期）：拒收并回传最新画布数据
- * @param room 房间
- * @param socket 发送者连接
- * @param elementId 元素 ID
- * @param baseData 客户端基准画布数据
- */
-export function handleDeselect(room: CollabRoom, socket: WebSocket, elementId: string, baseData: CanvasStorageData): void {
-  const member = room.members.get(socket);
-  if (!member || !elementId) return;
-  if (!isDeepStrictEqual(baseData, room.canvasData)) {
-    send(socket, { type: MsgType.REJECT, canvasData: room.canvasData });
-    return;
+  // 成员同一时刻只持有一个选中标记：释放 cur 以外的全部旧标记（含客户端未上报的残留）
+  for (const [elementId] of room.selections) {
+    if (elementId !== cur && dropSelection(room, elementId, member.userId)) {
+      broadcastSelection(room, elementId);
+    }
   }
-  if (dropSelection(room, elementId, member.userId)) {
-    broadcastSelection(room, elementId);
+  if (cur) {
+    const userIds = room.selections.get(cur) ?? [];
+    if (!userIds.includes(member.userId)) {
+      userIds.push(member.userId);
+      room.selections.set(cur, userIds);
+      broadcastSelection(room, cur);
+    }
   }
 }
 

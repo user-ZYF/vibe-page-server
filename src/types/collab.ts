@@ -8,10 +8,8 @@ import type { CanvasStorageData, CanvasInnerElement } from './canvas.js';
 export enum CollabMsgTypeEnum {
   /** 客户端提交画布修改（语义操作列表） */
   OP = 1,
-  /** 客户端上报选中元素（选中标记，非操作锁） */
-  SELECT = 2,
-  /** 客户端取消选中元素 */
-  DESELECT = 3,
+  /** 客户端上报选中变化 */
+  SELECTION = 2,
   /** 服务端下发初始数据 / 重同步数据 */
   INIT = 10,
   /** 服务端确认修改已被接受 */
@@ -134,12 +132,14 @@ export interface CollabOpMsg {
   ops: CollabOp[];
 }
 
-/** 客户端上报/取消元素选中标记 */
+/** 客户端上报元素选中变化 */
 export interface CollabSelectionMsg {
   /** 消息类型 */
-  type: CollabMsgTypeEnum.SELECT | CollabMsgTypeEnum.DESELECT;
-  /** 元素 ID */
-  elementId: string;
+  type: CollabMsgTypeEnum.SELECTION;
+  /** 之前选中的元素 ID */
+  prev: string | null;
+  /** 当前选中的元素 ID */
+  cur: string | null;
   /** 客户端基准画布数据 */
   baseData: CanvasStorageData;
 }
