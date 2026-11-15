@@ -9,6 +9,7 @@ import {
   listPages,
   renamePage,
 } from '../services/page.js';
+import { kickSharedMembers } from '../ws/room.js';
 import { assertId, assertIsString, assertMaxLength, requireNonEmpty } from '../utils/validate.js';
 
 /**
@@ -59,6 +60,8 @@ export async function deleteController(req: Request, res: Response): Promise<voi
 export async function enableShareController(req: Request, res: Response): Promise<void> {
   const id = assertId(req.body?.id);
   const data = await enableShare(req.userId!, id);
+  // 重复开启会重新生成令牌，旧链接即刻失效，踢掉持有旧令牌的协作者
+  kickSharedMembers(id);
   res.json(Result.success(data));
 }
 
@@ -68,6 +71,8 @@ export async function enableShareController(req: Request, res: Response): Promis
 export async function disableShareController(req: Request, res: Response): Promise<void> {
   const id = assertId(req.body?.id ?? req.query.id);
   await disableShare(req.userId!, id);
+  // 分享关闭：踢掉所有通过分享链接加入的协作者
+  kickSharedMembers(id);
   res.json(Result.success());
 }
 

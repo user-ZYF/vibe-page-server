@@ -38,6 +38,20 @@ export function getOrCreateRoom(
   return room;
 }
 
+/**
+ * 分享关闭/令牌重置：踢掉房间内所有非所有者连接（所有者不依赖 shareToken，保留）
+ * @param pageId 页面 ID
+ */
+export function kickSharedMembers(pageId: number): void {
+  const room = rooms.get(pageId);
+  if (!room) return;
+  for (const [socket, member] of room.members) {
+    if (member.userId !== room.userId) {
+      socket.close(CollabCloseCodeEnum.SHARE_DISABLED);
+    }
+  }
+}
+
 /** 从房间表移除 */
 export function removeRoom(room: CollabRoom): void {
   rooms.delete(room.pageId);
